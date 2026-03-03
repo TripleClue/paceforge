@@ -1,9 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QVKVGEH5KZ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-QVKVGEH5KZ');
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PaceForge — Race Pace Planner</title>
+<title>PaceForge - Race Pace Planner</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -639,7 +648,7 @@
     body { background: white !important; color: black !important; font-size: 11px; }
     body::before { display: none; }
     header, .hero, .step-grid, .calculate-btn, .export-bar, #calcError,
-    .map-wrap, .chart-wrap { display: none !important; }
+    .map-wrap, .chart-wrap, .card { display: none !important; }
     #results { display: block !important; margin-top: 0; }
     main { padding: 0; max-width: 100%; }
     .results-header { font-size: 20px; color: black; margin-bottom: 10px;
@@ -774,7 +783,7 @@
     <div class="card-label" data-step="4">Technical Descents</div>
     <label class="descent-cap-toggle">
       <input type="checkbox" id="descentCapEnabled" onchange="toggleDescentCap()">
-      <span style="font-size:13px; color:var(--text2); font-family:'DM Mono',monospace; letter-spacing:0.3px;">Cap pace on steep or technical descents</span>
+      <span style="font-size:13px; color:var(--text2); font-family:'DM Mono',monospace; letter-spacing:0.3px;">Limit pace on steep or technical descents</span>
     </label>
 
     <div id="descentCapSettings" class="descent-cap-settings" style="display:none;">
@@ -791,7 +800,7 @@
           </div>
         </div>
       </div>
-      <p style="font-size:12px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:12px;">Segments steeper than this threshold will be slowed to the cap regardless of the Minetti prediction — use for loose, rocky, or technically demanding terrain.</p>
+      <p style="font-size:12px; color:var(--muted); font-family:'DM Mono',monospace; margin-top:12px;">Segments steeper than this threshold will be slowed to the pace limit regardless of the Minetti prediction. Use for loose, rocky, or technically demanding terrain.</p>
     </div>
   </div>
 
@@ -812,6 +821,11 @@
     <div class="chart-wrap">
       <div class="chart-title">Elevation Profile &amp; Pace Strategy</div>
       <canvas id="elevChart" height="120"></canvas>
+      <p style="margin-top:12px; font-size:11px; color:var(--muted); font-family:'DM Mono',monospace;">
+        Grade-adjusted pace uses the Minetti metabolic cost model —
+        <a href="https://doi.org/10.1152/japplphysiol.01177.2001" target="_blank" rel="noopener"
+           style="color:var(--muted); text-decoration:underline; text-underline-offset:3px;">Minetti et al., <em>J. Appl. Physiol.</em> 2002</a>
+      </p>
     </div>
 
     <div class="segments-wrap">
@@ -840,9 +854,9 @@
     </div>
 
     <div class="export-bar">
+      <button class="btn-secondary" onclick="openRaceCard()" style="border-color: var(--accent); color: var(--accent);">📱 Phone Race Card</button>
       <button class="btn-secondary" onclick="window.print()">🖨️ Print Race Card</button>
       <button class="btn-secondary" onclick="exportCSV()">📊 Export CSV</button>
-      <button class="btn-secondary" onclick="openRaceCard()" style="border-color: var(--accent); color: var(--accent);">📱 Phone Race Card</button>
       <button class="btn-secondary" onclick="resetForm()">↩ New Route</button>
     </div>
   </div>
@@ -1686,29 +1700,50 @@ function renderChart(segs, totalDistM) {
   const ctx = document.getElementById('elevChart').getContext('2d');
   if (chart) chart.destroy();
 
+  const unitM = unit === 'km' ? 1000 : 1609.34;
   const numElevPts = Math.min(300, gpxPoints.length);
   const step = Math.floor(gpxPoints.length / numElevPts);
-  const elevLabels = [];
+  const labels = [];
   const elevData = [];
 
   for (let i = 0; i < gpxPoints.length; i += step) {
-    const d = unit === 'km' ? (gpxPoints[i].dist / 1000) : (gpxPoints[i].dist / 1609.34);
-    elevLabels.push(d.toFixed(1));
+    const d = gpxPoints[i].dist / unitM;
+    labels.push(d.toFixed(2));
     elevData.push(gpxPoints[i].ele);
   }
 
+  // Build pace data aligned to same x-axis labels.
+  // For each sample point, find which moving segment contains it and read its pace.
+  const movingSegs = segs.filter(s => !s.isAidStop);
+  const paceData = labels.map(label => {
+    const distM = parseFloat(label) * unitM;
+    let seg = movingSegs.find(s => distM >= s.startDist && distM <= s.endDist);
+    if (!seg) seg = distM < movingSegs[0].startDist ? movingSegs[0] : movingSegs[movingSegs.length - 1];
+    return seg.adjustedPaceSecPerM * unitM / 60;
+  });
+
   const style = getComputedStyle(document.documentElement);
-  const cAccent   = style.getPropertyValue('--accent').trim();
-  const cSurface  = style.getPropertyValue('--surface').trim();
-  const cBorder   = style.getPropertyValue('--border').trim();
-  const cMuted    = style.getPropertyValue('--muted').trim();
-  const cText2    = style.getPropertyValue('--text2').trim();
+  const cAccent       = style.getPropertyValue('--accent').trim();
+  const cSurface      = style.getPropertyValue('--surface').trim();
+  const cBorder       = style.getPropertyValue('--border').trim();
+  const cMuted        = style.getPropertyValue('--muted').trim();
+  const cText2        = style.getPropertyValue('--text2').trim();
   const cBorderSubtle = style.getPropertyValue('--border-subtle').trim();
-  const cAccentDim = style.getPropertyValue('--accent-dim').trim();
+  const cAccentDim    = style.getPropertyValue('--accent-dim').trim();
+
+  const cPace = '#38bdf8'; // sky blue — max contrast against lime
+
+  // Lock axis ranges so toggling a series never rescales the chart
+  const elevMin = Math.min(...elevData);
+  const elevMax = Math.max(...elevData);
+  const elevPad = (elevMax - elevMin) * 0.08 || 10;
+  const paceMin = Math.min(...paceData);
+  const paceMax = Math.max(...paceData);
+  const pacePad = (paceMax - paceMin) * 0.12 || 0.5;
 
   chart = new Chart(ctx, {
     data: {
-      labels: elevLabels,
+      labels,
       datasets: [
         {
           type: 'line',
@@ -1720,15 +1755,43 @@ function renderChart(segs, totalDistM) {
           tension: 0.4,
           pointRadius: 0,
           borderWidth: 2,
-          yAxisID: 'yElev'
+          yAxisID: 'yElev',
+          order: 2
+        },
+        {
+          type: 'line',
+          label: `Pace (min/${unit === 'km' ? 'km' : 'mi'})`,
+          data: paceData,
+          borderColor: cPace,
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0,
+          stepped: 'before',
+          pointRadius: 0,
+          borderWidth: 2.5,
+          yAxisID: 'yPace',
+          order: 1
         }
       ]
     },
     options: {
       responsive: true,
+      animation: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: cText2,
+            font: { family: 'DM Mono', size: 10 },
+            boxWidth: 20,
+            boxHeight: 2,
+            padding: 16,
+            usePointStyle: false
+          }
+        },
         tooltip: {
           backgroundColor: cSurface,
           borderColor: cBorder,
@@ -1738,8 +1801,13 @@ function renderChart(segs, totalDistM) {
           titleFont: { family: 'DM Mono', size: 11 },
           bodyFont: { family: 'DM Mono', size: 11 },
           callbacks: {
-            title: items => `${unit === 'km' ? 'km' : 'mi'} ${items[0].label}`,
-            label: item => ` Elevation: ${item.raw}m`
+            title: items => `${unit === 'km' ? 'km' : 'mi'} ${parseFloat(items[0].label).toFixed(1)}`,
+            label: item => {
+              if (item.datasetIndex === 0) return ` Elev: ${Math.round(item.raw)}m`;
+              const mins = Math.floor(item.raw);
+              const secs = Math.round((item.raw - mins) * 60);
+              return ` Pace: ${mins}:${String(secs).padStart(2, '0')}/${unit === 'km' ? 'km' : 'mi'}`;
+            }
           }
         }
       },
@@ -1754,9 +1822,34 @@ function renderChart(segs, totalDistM) {
           }
         },
         yElev: {
+          position: 'left',
+          min: elevMin - elevPad,
+          max: elevMax + elevPad,
           grid: { color: cBorderSubtle },
-          ticks: { color: cMuted, font: { family: 'DM Mono', size: 10 } },
-          title: { display: true, text: 'Elevation (m)', color: cMuted, font: { family: 'DM Mono', size: 10 } }
+          ticks: { color: cAccent, font: { family: 'DM Mono', size: 10 } },
+          title: { display: true, text: 'Elevation (m)', color: cAccent, font: { family: 'DM Mono', size: 10 } }
+        },
+        yPace: {
+          position: 'right',
+          reverse: true,
+          min: paceMin - pacePad,
+          max: paceMax + pacePad,
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: cPace,
+            font: { family: 'DM Mono', size: 10 },
+            callback: val => {
+              const mins = Math.floor(val);
+              const secs = Math.round((val - mins) * 60);
+              return `${mins}:${String(secs).padStart(2, '0')}`;
+            }
+          },
+          title: {
+            display: true,
+            text: `Pace (min/${unit === 'km' ? 'km' : 'mi'})`,
+            color: cPace,
+            font: { family: 'DM Mono', size: 10 }
+          }
         }
       }
     }
@@ -1775,9 +1868,9 @@ function formatTime(secs) {
 
 function formatPace(secPerM) {
   const unitM = unit === 'km' ? 1000 : 1609.34;
-  const secPerUnit = secPerM * unitM;
-  const m = Math.floor(secPerUnit / 60);
-  const s = Math.round(secPerUnit % 60);
+  let totalSec = Math.round(secPerM * unitM);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
   return `${m}:${pad(s)}`;
 }
 
@@ -1808,7 +1901,7 @@ function showError(id, msg) {
 function hideError(id) {
   document.getElementById(id).style.display = 'none';
 }
-function openRaceCard() {
+async function openRaceCard() {
   if (!currentSegments.length) return;
   const unitLabel = unit === 'km' ? 'km' : 'mi';
   const unitM = unit === 'km' ? 1000 : 1609.34;
@@ -1819,275 +1912,219 @@ function openRaceCard() {
     ? (totalDistM / 1000).toFixed(1) + ' km'
     : (totalDistM / 1609.34).toFixed(1) + ' mi';
 
-  // Build rows — show all segments but compress flat/climb/descent into single character
-  let rows = '';
+  // ── Load fonts ────────────────────────────────────────────────────────────
+  try {
+    await Promise.all([
+      new FontFace('Bebas Neue', 'url(https://fonts.gstatic.com/s/bebasneuetypeface/v14/JTUSjIg69CK48gW7PXoo9WdhyyTh89ZNpQ.woff2)').load(),
+      new FontFace('DM Mono', 'url(https://fonts.gstatic.com/s/dmmono/v14/aFTR7PB1QTsUX8KYvrumzBkL.woff2)').load(),
+      new FontFace('DM Sans', 'url(https://fonts.gstatic.com/s/dmsans/v14/rP2Hp2ywxg089UriCZOIHQ.woff2)').load(),
+    ]).then(faces => faces.forEach(f => document.fonts.add(f)));
+  } catch(e) { /* fonts may already be loaded */ }
+
+  // ── Layout constants ──────────────────────────────────────────────────────
+  const W = 800;
+  const PAD = 40;
+  const COL = { num: PAD, type: PAD + 50, dist: W - 460, pace: W - 280, arrive: W - PAD };
+  const ROW_H = 52;
+  const HEADER_H = 180;
+  const FOOTER_H = 56;
+  const rows = currentSegments;
+  const totalH = HEADER_H + rows.length * ROW_H + FOOTER_H + 16;
+
+  // ── Colours ───────────────────────────────────────────────────────────────
+  const C = {
+    bg: '#0e0f0e', surface: '#161817', border: '#2a2e2a',
+    accent: '#c8f135', accent2: '#4ade80', warn: '#f5a623',
+    danger: '#ff6b4a', purple: '#a78bfa',
+    text: '#e8ede6', text2: '#9aa896', muted: '#5a6358',
+  };
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = W;
+  canvas.height = totalH;
+  const ctx = canvas.getContext('2d');
+
+  // ── Background ────────────────────────────────────────────────────────────
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, W, totalH);
+
+  // ── Header ────────────────────────────────────────────────────────────────
+  ctx.fillStyle = C.surface;
+  ctx.fillRect(0, 0, W, HEADER_H);
+  ctx.fillStyle = C.accent;
+  ctx.fillRect(0, HEADER_H - 3, W, 3);
+
+  ctx.fillStyle = C.accent;
+  ctx.font = '500 52px "Bebas Neue", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('PACEFORGE', PAD, 56);
+
+  ctx.fillStyle = C.text2;
+  ctx.font = '24px "DM Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(distDisplay, W - PAD, 44);
+  ctx.fillText(totalAidSec > 0 ? 'incl. aid stops' : 'no aid stops', W - PAD, 72);
+
+  ctx.fillStyle = C.muted;
+  ctx.font = '20px "DM Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('TARGET FINISH', PAD, 96);
+
+  ctx.fillStyle = C.accent;
+  ctx.font = '700 88px "Bebas Neue", sans-serif';
+  ctx.fillText(formatTime(totalTimeSec), PAD, 168);
+
+  if (splitType !== 'even') {
+    const pillText = splitType === 'negative' ? '- NEG SPLIT' : '+ POS SPLIT';
+    ctx.font = '22px "DM Mono", monospace';
+    const pw = ctx.measureText(pillText).width + 24;
+    const px = W - PAD - pw;
+    const py = 112;
+    ctx.strokeStyle = 'rgba(200,241,53,0.3)';
+    ctx.lineWidth = 1.5;
+    rcPath(ctx, px, py, pw, 34, 17);
+    ctx.stroke();
+    ctx.fillStyle = C.accent;
+    ctx.textAlign = 'center';
+    ctx.fillText(pillText, px + pw / 2, py + 23);
+  }
+
+  // ── Column headers ────────────────────────────────────────────────────────
+  let y = HEADER_H + 32;
+  ctx.fillStyle = C.muted;
+  ctx.font = '24px "DM Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('#', COL.num, y);
+  ctx.fillText('SEGMENT', COL.type, y);
+  ctx.fillText('CUM. DIST.', COL.dist, y);
+  ctx.fillText('PACE', COL.pace, y);
+  ctx.textAlign = 'right';
+  ctx.fillText('ARRIVE', COL.arrive, y);
+  y += 14;
+  ctx.strokeStyle = C.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+  y += 16;
+
+  // ── Rows ──────────────────────────────────────────────────────────────────
   let segNum = 0;
-  currentSegments.forEach(seg => {
+  rows.forEach((seg, i) => {
+    const rowY = y + i * ROW_H;
+
+    if (i > 0) {
+      ctx.strokeStyle = 'rgba(42,46,42,0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(PAD, rowY - 1); ctx.lineTo(W - PAD, rowY - 1); ctx.stroke();
+    }
+
     if (seg.isAidStop) {
-      const atDist = (seg.startDist / unitM).toFixed(1);
-      rows += `<tr class="aid-row-rc">
-        <td class="num">💧</td>
-        <td class="type-cell"><span class="badge badge-aid">Aid @ ${atDist}${unitLabel}</span></td>
-        <td class="pace-val">+${formatTime(seg.segTimeSec)}</td>
-        <td class="arrive-val">${formatTime(seg.endTime)}</td>
-      </tr>`;
+      ctx.fillStyle = 'rgba(139,92,246,0.07)';
+      ctx.fillRect(0, rowY, W, ROW_H);
+      ctx.font = '26px "DM Sans", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = C.purple;
+      ctx.fillText('\uD83D\uDCA7', COL.num, rowY + ROW_H * 0.65);
+      const bText = 'Aid @ ' + (seg.startDist / unitM).toFixed(1) + ' ' + unitLabel;
+      rcBadge(ctx, bText, COL.type, rowY + ROW_H * 0.65, 'rgba(139,92,246,0.18)', C.purple);
+      ctx.fillStyle = C.muted;
+      ctx.font = '26px "DM Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText((seg.startDist / unitM).toFixed(1), COL.dist, rowY + ROW_H * 0.65);
+      ctx.fillStyle = C.purple;
+      ctx.font = '26px "DM Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('+' + formatTime(seg.segTimeSec), COL.pace, rowY + ROW_H * 0.65);
+      ctx.fillStyle = C.text2;
+      ctx.font = '700 38px "Bebas Neue", sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(formatTime(seg.endTime), COL.arrive, rowY + ROW_H * 0.68);
       return;
     }
+
     segNum++;
-    const grade = seg.grade;
-    let badgeClass, badgeText;
+    ctx.fillStyle = C.muted;
+    ctx.font = '22px "DM Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(String(segNum), COL.num, rowY + ROW_H * 0.65);
+
+    let bText, bBg, bFg;
     if (seg.isCapped) {
-      badgeClass = 'badge-capped'; badgeText = `⚠ −${Math.round(-grade*100)}%`;
-    } else if (grade > 0.02) {
-      badgeClass = 'badge-climb'; badgeText = `▲ ${Math.round(grade*100)}%`;
-    } else if (grade < -0.02) {
-      badgeClass = 'badge-descent'; badgeText = `▼ ${Math.round(-grade*100)}%`;
+      bText = 'CAP -' + Math.round(-seg.grade * 100) + '%';
+      bBg = 'rgba(255,107,74,0.16)'; bFg = C.danger;
+    } else if (seg.grade > 0.02) {
+      bText = 'CLIMB ' + Math.round(seg.grade * 100) + '%';
+      bBg = 'rgba(245,166,35,0.14)'; bFg = C.warn;
+    } else if (seg.grade < -0.02) {
+      bText = 'DOWN ' + Math.round(-seg.grade * 100) + '%';
+      bBg = 'rgba(74,222,128,0.12)'; bFg = C.accent2;
     } else {
-      badgeClass = 'badge-flat'; badgeText = '—';
+      bText = 'FLAT';
+      bBg = 'rgba(90,99,88,0.2)'; bFg = C.text2;
     }
-    const endDistDisplay = (seg.endDist / unitM).toFixed(1);
-    rows += `<tr>
-      <td class="num">${segNum}</td>
-      <td class="type-cell"><span class="badge ${badgeClass}">${badgeText}</span> <span class="dist-note">${endDistDisplay}</span></td>
-      <td class="pace-val">${formatPace(seg.adjustedPaceSecPerM)}/${unitLabel[0]}</td>
-      <td class="arrive-val">${formatTime(seg.endTime)}</td>
-    </tr>`;
+    const badgeRight = rcBadge(ctx, bText, COL.type, rowY + ROW_H * 0.65, bBg, bFg);
+
+    ctx.fillStyle = C.text2;
+    ctx.font = '26px "DM Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText((seg.endDist / unitM).toFixed(1), COL.dist, rowY + ROW_H * 0.65);
+
+    ctx.fillStyle = seg.isCapped ? C.danger : C.text2;
+    ctx.font = '26px "DM Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(formatPace(seg.adjustedPaceSecPerM) + '/' + unitLabel[0], COL.pace, rowY + ROW_H * 0.65);
+
+    ctx.fillStyle = C.text;
+    ctx.font = '700 42px "Bebas Neue", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(formatTime(seg.endTime), COL.arrive, rowY + ROW_H * 0.72);
   });
 
-  const splitInfo = splitType !== 'even'
-    ? `<span class="pill">${splitType === 'negative' ? '− Neg' : '+ Pos'} Split</span>`
-    : '';
+  // ── Footer ────────────────────────────────────────────────────────────────
+  const footerY = HEADER_H + rows.length * ROW_H + 24;
+  ctx.strokeStyle = C.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, footerY); ctx.lineTo(W - PAD, footerY); ctx.stroke();
+  ctx.fillStyle = C.muted;
+  ctx.font = '19px "DM Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Generated by PaceForge', W / 2, footerY + 34);
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Race Card — PaceForge</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0e0f0e;
-    --surface: #161817;
-    --border: #2a2e2a;
-    --accent: #c8f135;
-    --accent2: #4ade80;
-    --warn: #f5a623;
-    --danger: #ff6b4a;
-    --text: #e8ede6;
-    --text2: #9aa896;
-    --muted: #5a6358;
-    --purple: #a78bfa;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    padding: 0;
-    max-width: 480px;
-    margin: 0 auto;
-  }
+  // ── Download ──────────────────────────────────────────────────────────────
+  canvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'race-card.png';
+    a.click();
+  }, 'image/png');
+}
 
-  .header {
-    background: var(--surface);
-    border-bottom: 2px solid var(--accent);
-    padding: 16px 20px 12px;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
+// Rounded rect path helper
+function rcPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
-  .header-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 10px;
-  }
-
-  .brand {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 22px;
-    letter-spacing: 2px;
-    color: var(--accent);
-    line-height: 1;
-  }
-
-  .race-meta {
-    text-align: right;
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--text2);
-    line-height: 1.5;
-  }
-
-  .finish-time {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 44px;
-    color: var(--accent);
-    letter-spacing: 1px;
-    line-height: 1;
-  }
-
-  .finish-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    margin-bottom: 2px;
-  }
-
-  .meta-pills {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-  }
-
-  .pill {
-    background: rgba(200,241,53,0.1);
-    border: 1px solid rgba(200,241,53,0.25);
-    color: var(--accent);
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    padding: 3px 8px;
-    border-radius: 20px;
-    letter-spacing: 0.5px;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  thead th {
-    font-family: 'DM Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 1.5px;
-    color: var(--muted);
-    text-transform: uppercase;
-    padding: 10px 16px 8px;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    position: sticky;
-    top: 0;
-  }
-
-  tbody tr {
-    border-bottom: 1px solid rgba(42,46,42,0.4);
-  }
-
-  tbody tr.aid-row-rc {
-    background: rgba(139,92,246,0.06);
-  }
-
-  tbody td {
-    padding: 11px 16px;
-    vertical-align: middle;
-  }
-
-  .num {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
-    width: 28px;
-    padding-right: 4px;
-  }
-
-  .type-cell {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .badge {
-    display: inline-block;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: 4px;
-    white-space: nowrap;
-  }
-
-  .badge-climb { background: rgba(245,166,35,0.15); color: var(--warn); }
-  .badge-descent { background: rgba(74,222,128,0.12); color: var(--accent2); }
-  .badge-flat { background: rgba(90,99,88,0.2); color: var(--text2); }
-  .badge-capped { background: rgba(255,107,74,0.15); color: var(--danger); }
-  .badge-aid { background: rgba(139,92,246,0.15); color: var(--purple); }
-
-  .dist-note {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-  }
-
-  .pace-val {
-    font-family: 'DM Mono', monospace;
-    font-size: 12px;
-    color: var(--text2);
-    white-space: nowrap;
-    padding-right: 8px;
-  }
-
-  .arrive-val {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 24px;
-    color: var(--text);
-    letter-spacing: 1px;
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  .footer {
-    padding: 20px 16px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-    text-align: center;
-    border-top: 1px solid var(--border);
-    margin-top: 8px;
-  }
-</style>
-</head>
-<body>
-<div class="header">
-  <div class="header-top">
-    <div>
-      <div class="brand">PaceForge</div>
-    </div>
-    <div class="race-meta">
-      ${distDisplay}<br>
-      ${totalAidSec > 0 ? 'incl. aid stops' : 'no aid stops'}
-    </div>
-  </div>
-  <div class="finish-label">Target Finish</div>
-  <div class="finish-time">${formatTime(totalTimeSec)}</div>
-  <div class="meta-pills">
-    ${splitInfo}
-  </div>
-</div>
-<table>
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Segment</th>
-      <th>Pace</th>
-      <th style="text-align:right">Arrive</th>
-    </tr>
-  </thead>
-  <tbody>${rows}</tbody>
-</table>
-<div class="footer">Generated by PaceForge &nbsp;·&nbsp; Add to Home Screen to keep offline</div>
-</body>
-</html>`;
-
-  const w = window.open('', '_blank');
-  w.document.write(html);
-  w.document.close();
+// Draw a filled badge pill, return right edge x
+function rcBadge(ctx, text, x, baselineY, bg, fg) {
+  ctx.font = '22px "DM Sans", sans-serif';
+  const tw = ctx.measureText(text).width;
+  const ph = 30, pw = tw + 20, py = baselineY - 22;
+  ctx.fillStyle = bg;
+  rcPath(ctx, x, py, pw, ph, 6);
+  ctx.fill();
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'left';
+  ctx.fillText(text, x + 10, baselineY);
+  return x + pw;
 }
 
 function resetForm() {
